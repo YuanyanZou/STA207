@@ -1,0 +1,801 @@
+---
+title: "Final report of Project STAR"
+author: "Yuanyan Zou"
+date: "3/7/2025"
+output:
+  html_document:
+    df_print: paged
+    number_sections: yes
+---
+```{r global_options, include=FALSE, warning=FALSE}
+knitr::opts_chunk$set(fig.pos = 'H')
+library(AER)
+library(dplyr)
+library(gplots)
+library(ggplot2)
+library(car)
+library(haven)
+library(lme4)
+```
+
+
+
+# Abstract
+Whether teacher-students ratio is important for education is debated for a long time. The project STAR was designed to analyze this class size effect on students achievement. In this report, a two-way ANOVA model is built to test the differences in student grade 1 math score across different class type and school. The small class type have significant positive effects on the student performance, and the difference between regular and regular-with-aide class is not significant. In conclusion, the larger teacher-student ratio can improve the quality of education.
+
+# Introduction
+Topics related to education are widely discussed, since education contributes to the long-term development of the society and country. It is crucial to analyze the factors which affect student achievement. Understanding the effect of class size can provide insights for governments and schools to make decisions on resources arrangement and allocation. 
+
+The project STAR (Student/Teacher Achievement Ratio) is an influential study of class-size effect on students' academic performance. In this report, we aim to analyse whether there is difference in student performance across the class type based on this experiment. If there are differences, we plan to identify the class type associated with highest score.
+
+# Background 
+
+The project STAR was conducted in Tennesses state from 1985 to 1990, which is designed as a long-term study of the relative effects on the student achievement. Students and teachers were randomly assigned to three different class types: small class (13-17 students), regular class (22-25 students), regular-with-aide class (full-time aide teacher provided). Across the experiment, there are 11600 students, 1330 teachers and 79 schools in 4 types of locations joined into the project. Numerous data at different levels were collected, such as student scores and individual backgrounds, class type and teacher experience, school IDs and location. 
+
+The primary question of interest of project STAR is to evaluate the effects of students-teacher ratio on student academic achievement and self-development. In the sample selection, schools were chosen from state-wide area and different location, and the project schools were needed to fit the condition to have all three type of classes. The project schools have better economical condition and educational condition, but only have small differences with the state-wide comparison school average. The proportion of inner city school in project schools is larger than the state proportion, which leads to lower average standard test score. Additionally, there were no other interference or changes of the school policy, curriculum and daily educational activities except for class type. 
+
+Given the randomization sampling of students and teachers, the school selection were reasonable and able to represent the situation of the states, which suggest that the experiment was designed well.
+
+In this report, we load the data set from Harvard database, and select the 1st grade variables which we are interested in. We focus on the class level data of grade 1 students who attended the project STAR, which means that data were aggregated by classes or teacher ID `g1tchid` equivalently. Math scaled score `g1tmathss` were chosen as the variable to evaluate the academic performance of students, and class type `g1classtype` represents the class type of grade 1. School ID `g1schid` is also a variable included in this report, since the school selection is non-random and the school factors such as curriculum and textbook were not controlled in the experiment, which leads to large variation of education quality. 
+
+
+# Comments on initial analysis 
+
+In the initial analysis, we use two-way ANOVA model to test whether the mean class scores differ across class types, and conclude that there is a significant positive effect of small class size on the student achievements. 
+
+We suggest that the conclusion is justified, but needs further exploration and detailed explanation. For instance, we had to create the teacher ID variable by other characteristics which exist some missing data, and lead to a smaller sample size. And we also noticed that some class type label were confounding, for example, the class with class size smaller than 22 but stilled labeled as regular class. Additionally, the justification on the model selection and interpretation of figures and results need to be improved. 
+
+# Descriptive analysis 
+
+In this section, we do some exploratory data analysis. 
+
+## Data Loading and Pre-processing
+
+First, we load the data set in R from Harvard database, and select the 1st grade variables which we are interested in. 
+
+We only focus on the students who attended the "STAR" project and eliminate the samples which do not. For the missing math score, the proportion of missing data is approximately 3.38% and they distributed across 64 out of 76 schools. Therefore, we suggest that these data were missing at random. Given the small proportion, the samples with missing math score data are eliminated directly. 
+
+```{r echo=FALSE, include=FALSE, results='hide'}
+# Load the data set
+data = read_sav("C:/Users/22367/OneDrive - mail.bnu.edu.cn/STA 207 Statistical Methods for Research II/Report/Dataset/STAR_Students.sav")
+name = names(data)
+summary(data)
+duplicates = data[duplicated(data), ]
+
+```
+
+```{r echo=FALSE, include=FALSE, results='hide'}
+# Select the 1st grade data which we are interested in
+STAR1 <- data %>%
+  select(stdntid, gktmathss, gkclasstype, g1classtype, g1schid, g1surban, g1tchid, g1tgen, g1trace, g1thighdegree, g1tcareer, g1tyears, g1classsize, g1freelunch, g1promote, g1speced, g1specin, g1present, g1absent, g1treadss, g1tmathss, g1tlistss, g1wordskillss, g1readbsraw, g1mathbsraw, g1readbsobjraw, g1mathbsobjraw, g1readbsobjpct, g1mathbsobjpct, g1motivraw, g1selfconcraw) %>%
+  mutate(
+    gkclasstype = as.factor(gkclasstype),
+    g1classtype = as.factor(g1classtype),
+    g1schid = as.factor(g1schid),
+    g1surban = as.factor(g1surban),
+    g1tchid = as.factor(g1tchid),
+    g1tgen = as.factor(g1tgen),
+    g1trace = as.factor(g1trace),
+    g1thighdegree = as.factor(g1thighdegree),
+    g1tcareer = as.factor(g1tcareer),
+    g1promote = as.factor(g1promote),
+    g1speced = as.factor(g1speced),
+    g1specin = as.factor(g1specin),
+    g1freelunch = as.factor(g1freelunch),
+    g1day = g1present + g1absent, 
+    g1rate = g1present/g1day,
+    change = g1tmathss - gktmathss
+  ) 
+  # filter(!is. na(g1classtype) & !is.na(g1tmathss))
+  # filter(!is.na(g1classtype) & !is.na(g1schid) & !is.na(g1tchid))
+
+# non-STAR proj
+non_star <- STAR1 %>% filter(is.na(g1classtype))
+summary(non_star)
+
+STAR1 <- STAR1 %>%
+  filter(!is.na(g1classtype))
+
+# proportion of missing values
+missingdata <- STAR1 %>%
+  summarise(across(everything(), ~ mean(is.na(.x)), .names = "{col}"))
+missingdata
+
+# samples with missing data
+na_math <- STAR1 %>% filter(is.na(g1tmathss))
+na_present <- STAR1 %>% filter(is.na(g1present))
+na_k <- STAR1 %>% filter(is.na(gktmathss))
+
+summary(na_math)
+nrow(na_math)
+length(unique(na_math$g1schid))
+length(unique(STAR1$g1schid))
+length(unique(na_math$g1tchid))
+length(unique(STAR1$g1tchid))
+
+# Clean the Missing Data
+STAR1 <- STAR1 %>%
+  filter(!is.na(g1classtype) & !is.na(g1schid) & !is.na(g1tchid) & !is.na(g1tmathss))
+
+STAR_c <- STAR1 %>%
+  filter(!is.na(change) & !is.na(gktmathss))
+```
+
+```{r echo=FALSE, include=FALSE, results='hide'}
+summary(STAR1)
+summary(STAR_c)
+nrow(STAR1)
+nrow(STAR_c)
+```
+
+Then, we aggregate students by teacher ID, since this report focus on class-level data, treating each class as the unit. In this way, the model will be more robust given the variety of individual background and large variance of student score.
+
+```{r echo=FALSE, include=FALSE, results='hide'}
+# Group by teachers/classes
+# Aggregate data by classID & Calculate basic stat
+classdata <- STAR1 %>%
+  group_by(g1tchid) %>%
+  summarise(
+    num = n(),
+    classsize = first(g1classsize),
+    star1 = first(g1classtype), 
+    teacherid1 = first(g1tchid),
+    schoolid1 = first(g1schid),
+    schoolurban1 = first(g1surban),
+    mean_class = mean(g1tmathss),
+    median_class = median(g1tmathss),
+    present_class = median(g1present),
+    var_class = var(g1tmathss),
+    rate = median(g1rate),
+    meanrate = mean(g1rate)
+  )
+
+# Aggregate data by class ID & Calculate basic stat
+classdata_c <- STAR_c %>%
+  group_by(g1tchid) %>%
+  summarise(
+    num = n(),
+    classsize = first(g1classsize),
+    star1 = first(g1classtype), 
+    teacherid1 = first(g1tchid),
+    schoolid1 = first(g1schid),
+    schoolurban1 = first(g1surban),
+    mean_class = mean(g1tmathss),
+    median_class = median(g1tmathss),
+    present_class = median(g1present),
+    var_class = var(g1tmathss),
+    rate = median(g1rate),
+    meanrate = mean(g1rate),
+    mean_base = mean(gktmathss),
+    median_base = median(gktmathss)
+  )
+```
+
+
+### Data cleaning
+
+By checking the raw data, it is noticeable that four schools (school ID 244796, 244839, 244736, 244728) do not have regular-with-aide class, which do not meet the condition of school selection. Although we did not find any explanation of lacking one type of class, we exclude these data to reduce bias.
+
+Then we also find that some classes have class size which is not consistent with the definition of the labeled class type. Ten small classes have class sizes larger than 17 but smaller than 20. Since the proportion is not large and students number is relatively smaller than regular class size, so we do not change the label. 35 regular classes and 27 regular-with-aide classes have less than 22 students, 
+and 7 regular and 3 regular-with-aide classes even have less than 20 students. However, most of these schools only have 1 class of the class type, and most of them are from inner city and rural, which is reasonable since there may be less students in these locations. For this situation, we compare the class size in the same school and considered the school condition. If the small class size is much smaller than the regular, we do not change the label. Evetually, we changed two regular class (teacher ID: 20549106 and 24474507) label into small class. 
+
+
+```{r echo=FALSE, include=FALSE, results='hide'}
+# School level
+schooldata <- classdata %>%
+  group_by(schoolid1) %>%
+  summarise(
+    num_class = n(),
+    mean_school = mean(mean_class),
+    median_school = mean(median_class),
+    urban = first(schoolurban1)
+  )
+num_school = nrow(schooldata)
+summary(schooldata)
+
+# Check school
+schoolcheck <- classdata %>%
+  group_by(schoolid1, star1) %>%
+  summarise(
+    num = n(), .groups = "drop"
+    )
+nrow(schoolcheck)
+
+s1 = data[(data$g1schid == 203452)  & !(is.na(data$g1schid)),]
+s1$g1classtype = as.factor(s1$g1classtype)
+summary(s1$g1classtype)
+nrow(s1)
+s1[(s1$g1classtype == 3) & !(is.na(s1$g1classtype)),]
+
+classdata[classdata$schoolid1 == 244736,]
+data[(data$g1schid == 244736)  & (data$g1tchid == 24479605)  & !(is.na(data$g1schid)),]
+
+# Schools did not includes all three types of class
+# 244796 . 3 no class type
+# 244839 . 3 no class type
+# 244736 . 3 no class type
+# 244728 . 3 no class type
+
+data_wrongschool <- schooldata %>%
+  filter(schoolid1 %in% c("244796", "244736", "244839", "244728")) 
+
+# Clean
+nrow(data)
+data <- data %>%
+  filter(!g1schid %in% c("244796", "244736", "244839", "244728")) 
+nrow(data)
+
+nrow(STAR1)
+STAR1 <- STAR1 %>%
+  filter(!g1schid %in% c("244796", "244736", "244839", "244728")) 
+nrow(STAR1)
+
+nrow(classdata)
+classdata <- classdata %>%
+  filter(!schoolid1 %in% c("244796", "244736", "244839", "244728")) 
+nrow(classdata)
+
+# Check class
+classcheck <- classdata %>%
+  filter(star1 == 1) %>%
+  arrange(desc(classsize))
+wrong = classcheck[classcheck$classsize > 17,]
+nrow(wrong)
+nrow(classcheck)
+wrong$schoolid1
+wrong$teacherid1
+# 10 small class have >= 17 stu but <=20 : 208501, 123056, 168211, 225585, 170295, 193422, 205492, 225585, 244727, 244745
+classcheck2 <- classdata %>%
+  filter(star1 == 2) %>%
+  arrange(desc(classsize))
+wrong = classcheck2[classcheck2$classsize < 20,]
+nrow(wrong)
+nrow(classcheck2)
+wrong$schoolid1
+wrong$teacherid1
+classdata[classdata$schoolid1 %in% wrong$schoolid1, ]
+
+# 10 regular class have > 25 stu but <=30
+# 36 regular class have < 22 stu
+# 3 regular+aide class have < 20 stu: 16923106, 16923108, 20548806, 24479907, 20549106, 24474507, 24479605, 24476405
+# schid: 169231, 169231, 205488, 244799, 205491, 244745, 244796, 244764
+# 2 regular class have < 18 stu: 24479605, 24476405
+# schid: 244796(deleted) 244764
+
+classcheck3 <- classdata %>%
+  filter(star1 == 3) %>%
+  arrange(desc(classsize))
+wrong = classcheck3[classcheck3$classsize < 20,]
+nrow(wrong)
+wrong$schoolid1
+nrow(classcheck3)
+classdata[classdata$schoolid1 %in% wrong$schoolid1, ]
+# 18 regular+aide class have > 25 stu but <=30
+# 27 regular+aide class have < 22 stu
+# 3 regular+aide class have < 20 stu: : 19342307, 24469707, 24476403
+# schid: 193423,244697,244764
+# 0 regular+aide class have < 18 stu
+
+classdata[(classdata$schoolid1 %in% c(193423,244697,244764)),]
+schoolcheck[(schoolcheck$schoolid1 %in% c(193423,244697,244764)),]
+# 2 only 1 regular with aide class
+
+classdata[(classdata$schoolid1 %in% c(244764)),]
+schoolcheck[(schoolcheck$schoolid1 %in% c(244764)),]
+# only 1 class in each type, all smaller classsizes
+
+schoolcheck[(schoolcheck$schoolid1 %in% c(208501, 123056, 168211, 225585, 170295, 193422, 205492, 225585, 244727, 244745)) & schoolcheck$star1==1,]
+# 5 school only 1 regular with aide class
+
+# Change Label
+data <- data %>%
+  mutate(
+    g1classtype = case_when(
+      g1schid == 205491 & g1tchid == 20549106 ~ 1,
+      g1schid == 244745 & g1tchid == 24474507 ~ 1,
+      TRUE ~ g1classtype
+    )
+  )
+
+classdata <- classdata %>%
+  mutate(
+    star1 = case_when(
+      schoolid1 == 205491 & teacherid1 == 20549106 ~ "1",  
+      schoolid1 == 244745 & teacherid1 == 24474507 ~ "1",
+      TRUE ~ star1 
+    )
+  )
+
+STAR1 <- STAR1 %>%
+  mutate(
+    g1classtype = case_when(
+      g1schid == 205491 & g1tchid == 20549106 ~ "1",
+      g1schid == 244745 & g1tchid == 24474507 ~ "1",
+      TRUE ~ g1classtype
+    )
+  )
+```
+
+
+## Univariate Descriptive Statistics 
+
+```{r  echo=FALSE, include=FALSE, results='hide'}
+# Student level
+# summary(STAR1)
+# str(STAR1)
+nrow(STAR1)
+summary(STAR1$g1tmathss)
+
+# Class level
+num_total = nrow(classdata) 
+
+# School level
+schooldata <- classdata %>%
+  group_by(schoolid1) %>%
+  summarise(
+    num_class = n(),
+    mean_school = mean(mean_class),
+    median_school = mean(median_class),
+    urban = first(schoolurban1)
+  )
+num_school = nrow(schooldata)
+```
+
+After data pre-processing and cleaning, our data set includes 6334 students from 325 classes in 72 schools.
+
+Here is the mean, median and quantiles of the student math score in 1st grade. A histogram of student 1st grade math score is generated as below. 
+
+```{r echo=FALSE}
+# Statistics
+summary(STAR1$g1tmathss)
+
+# Histogram of Student Math Scaled Score in 1st Grade
+par(mfrow = c(1, 1))
+hist(STAR1$g1tmathss, breaks = 10, main = "Histogram of Student Math Score in 1st Grade", xlab = "Student Math Scaled Score in 1st Grade")
+```
+
+The distribution of student score is shown approximates to normal distribution, but it is not very symmetric and a little bit left skewed.
+
+## Summary Statistics of 1st Grade Math Score Group by Classes
+
+In this part, we conduct class level data analysis. 
+
+### Choice of Summary Measure
+
+Since we treat each class as a unit, choosing the statistics to measure the student performance in each class is needed. Most common measures are mean and median, which can represent the average academic performance in a single class. 
+
+By exploratory data analysis of the data set, we observed that there are no more than 30 students in each class. By drawing histograms, we can find that the distributions of student score in single class varies from class to class. For instance, histograms from ten representative classes are shown below due to the length of report. The shapes of these distributions are not always symmetric, some approximates to normal distribution or uniform distribution, some are left skewed or right skewed, and some are multi-peak. 
+
+The distribution and outliers in each class may influence the mean score significantly due to the small sample size. Moreover, we find that the final model using mean as measure violated the normality assumption and the one using median did not. Therefore, it is more reasonable for us to choose the median to represent the performance of students in each class. 
+
+```{r echo=FALSE}
+# Histogram of Student Math Score in Single Class
+par(mfrow = c(2, 5))
+for (i in c(12,47,16,44,53,43,92,30,62,7)) {
+  temp <- STAR1[STAR1$g1tchid == classdata$teacherid1[i], ]
+  hist(temp$g1tmathss, main = paste("Class", classdata$teacherid1[i]), xlab = "Student Math Score")
+}
+
+# # Histogram of Student Present rate in Single Class
+# par(mfrow = c(2, 5))
+# for (i in 31:40) {
+#   temp <- STAR1[STAR1$g1tchid == classdata$teacherid1[i], ]
+#   hist(temp$g1rate, main = paste("Class", i), xlab = "Student Math Score")
+# }
+```
+
+### Median Math Score for Each Class
+
+Then we calculate the median of student math scores in each class. 
+
+The mean and median of the class median score are 531.4 and 532.0 respectively, which is close to the previous student level statistics. The histogram of median math score is generated as below. The distribution shape is similar with the one of univariate descriptive analysis. Therefore, the median math score of class can be a representative variable to evaluate academic performance of a class. 
+
+```{r echo=FALSE}
+# Statistics
+summary(classdata$median_class)
+
+# Histogram of Median Math Scores of Classes
+par(mfrow = c(1, 1))
+hist(classdata$median_class, breaks=10, main = "Histogram of Median Math Scores of Classes", xlab = "Median Math Score")
+```
+
+
+## Multivariate Descriptive Statistics
+
+To explore whether there are differences in class median score, we draw the box-plots to compare the statistics of median score across class types and school IDs. 
+
+### Median score v.s. Class Types
+
+We have three class types, including 120 small class, 105 regular class and 100 regular-with-aide class. 
+
+```{r echo=FALSE}
+# Outcome v.s. class types
+ggplot(classdata, aes(x = star1, y = median_class)) +
+  geom_boxplot() +
+  labs(title = "Box-Plot by Class Type",
+       x = "Class Type",
+       y = "Median Math Score of Classes") +
+  scale_x_discrete(labels = c("1" = "Small", "2" = "Regular", "3" = "Regular with Aide")) + 
+  theme_minimal()
+num_star = 3
+n <- classdata  %>%
+  count(star1)
+stat <- classdata  %>%
+  group_by(star1) %>%
+  summarise(
+    mean(median_class))
+```
+
+From the result and plot, the median score of small class is 539.29, the highest in general. The median of regular class and regular-with-aide class are 526.28 and 527.25 respectively, which seem to be close to each other, while the one of regular-with-aide class is slightly higher. 
+
+The plot suggest that smaller class size may have  positive effect on improving student performance, while full-time aide teacher seems have only little impact. 
+
+### Median score v.s. School IDs
+
+There are 72 schools in this report and every school has a school ID. The class number in different school varies from 3 to 12. The school with highest mean of median class score achieves 571.34, while the lowest is only 490.36. 
+
+```{r echo=FALSE}
+# Outcome v.s. school IDs
+ggplot(classdata, aes(x = schoolid1, y = median_class)) +
+  geom_boxplot() +
+  labs(title = "Box-Plot by School ID",
+       x = "School ID",
+       y = "Median Math Score of Classes") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 5))
+
+num_school = nrow(schooldata)
+
+sdata <- schooldata %>%
+  arrange(desc(num_class))
+sdata <- schooldata %>%
+  arrange(desc(mean_school))
+```
+
+From this box-plot, we can observed significant variation of median class score in different schools, potentially caused by school policy and education mode such as schedule of classes and resources. However, it appears no obvious patterns or trend of median score between schools.
+
+#### Median score v.s. School Location
+
+Because of the large amount of school ID, we cannot observed the patterns and trends in figures clearly, and the large number of coefficients also leads to difficult interpretation of the model. Comparing to the location of school, school IDs is not a variable with clear meaning which cannot be explained directly. The location of school represents the urbanicity level, which is highly related to education resources and economic level, may have significant influences on the academic scores. 
+
+Therefore, we also generate a box-plot by school location to explain part of the school effect on student achievement. 
+
+```{r echo=FALSE}
+# Outcome v.s. school location 
+schoolurban <- classdata %>%
+  group_by(schoolurban1) %>%
+  summarise(
+    num_class = n(),
+    num_small = sum(star1 == 1, na.rm = TRUE),
+    num_r = sum(star1 == 2, na.rm = TRUE),
+    num_ra = sum(star1 == 3, na.rm = TRUE),
+    mean_school = mean(median_class),
+    median_school = median(median_class),
+    var = var(median_class)
+  )
+num_schooltype = nrow(schoolurban)
+schoolurban
+# summary(schoolurban)
+
+ggplot(classdata, aes(x = schoolurban1, y = median_class)) +
+  geom_boxplot() +
+  labs(title = "Box-Plot by School Location",
+       x = "School Location",
+       y = "Median Math Score of Classes") +
+  scale_x_discrete(labels = c("1" = "Inner City", "2" = "Suburban", "3" = "Rural", "4" = "Urban")) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 10))
+```
+
+From the table and box-plot, it is interesting to find that number of schools located in rural place is much larger than other, but the variance of median class score is the smallest, which means that median class score of schools in the rural places have smaller deviations. The reasons may be the wide-spread population in rural area, and the similarity of school resources and student backgrounds. 
+
+Additionally, the class median scores of schools in inner city obviously lower that the other three type of location, while the mean and median score of school located in suburban, rural, and urban city have similar mean scores have only slightly differences. This may be caused by the crime rates and uncertainties of society in the inner city. In the other three types locations, the structures of schools, especially the public schools, may be similar to each other, which leads to the similarity of median class score. These observations are consistent with the randomization of students and teachers sampling, showing that the selection of schools is also justified.
+
+
+# Inferential analysis 
+
+In this section, we fit the model to explore our question of interest.
+
+## Two-way ANOVA Model
+To investigate the effect of class types on the median math score, we build up a two-way ANOVA model as follows. 
+
+### Model Equations
+
+$Y_{ijk} = \mu_{..} + \alpha_{i} + \beta_{j} + \varepsilon_{ijk}.$
+
+**Explanations of Parameters**
+
+Indexs:
+
+- $i$: represents the class type, small class type ($i=1$), regular  class type ($i=2$), regular-with-aide class type ($i=3$).
+
+- $j$: represents the school ID, the value of j is a unique ID for each school.
+
+- $k$: represent the order of sample.
+
+Parameters:
+
+- $Y_{ijk}$: the response variable, representing the median math score of students in the k-th sample class in the i-th class type and j-th school.
+
+- $\mu_{..}$: the overall mean of all outcomes (class median score), represent the baseline of performance without consideration of class type influence and school IDs influence. 
+
+- $\alpha_{i}$: the main factor effect of i-th class type on median score, ignoring the effect of school IDs.  
+
+- $\beta_{j}$: the main factor effect of j-th school on median score, ignoring the effect of class type. 
+
+- $\varepsilon_{ijk}$: the error terms of the k-th sample class in the i-th class type and j-th school, represent the other influences not involved and randomness. 
+
+
+**Constraints on parameters**
+
+The sum of main effects of a factor should be zero.
+
+$\sum\limits_i \alpha_{i}=0.$
+
+$\sum\limits_j \beta_{j}=0.$
+
+
+### Model Assumptions 
+
+There are some assumptions:
+
+- Independency: The observations should be independent with each other.
+
+- Identical distribution, Normality of error terms: $\varepsilon_{ijk} \sim_{\text{i.i.d.}} N(0,\sigma^2)$.
+
+- Equality of variance: $\sigma$ is a constant. 
+
+
+```{r echo=FALSE, include=FALSE}
+# Ensure variables are categorical
+str(classdata$star1)
+classdata$star1 = as.factor(classdata$star1)
+str(classdata$schoolid1)
+
+# Two-way ANOVA
+model1 <- aov(median_class ~ star1 + schoolid1, data = classdata)
+summary(model1)
+Anova(model1, type =2)
+```
+
+
+### Justification of Model Selection
+
+We choose to fit a ANOVA model because we want to investigate the differences of outcomes (median class score) between different groups (class type). In the design of project STAR experiment, the selection of school was not random and no other adjustment or changes have been made except for having different class type. Therefore, there may exist significant heterogeneity from school factor. Therefore, we choose the two-way ANOVA model and include two factors.
+
+If we fit a full model with interaction terms $(\alpha\beta)_{ij}$, which represents the interaction effect between the i-th class type and j-th school excluding main effect, we suggest that the total effect of class type may fluctuate in different schools. However, we hope that our conclusion of the class size effect is consistent in different schools. 
+
+To illustrate the interaction term is not significant and ensure the consistency of conclusion, we conduct a hypothesis F-test as bellow. 
+
+Full model: $Y_{ijk} = \mu_{..} + \alpha_{i} + \beta_{j} + (\alpha\beta)_{ij} + \varepsilon_{ijk}.$
+
+Reduce model: $Y_{ijk} = \mu_{..} + \alpha_{i} + \beta_{j} + \varepsilon_{ijk}.$
+
+Null Hypothesis $H_0:(\alpha\beta)_{ij}=0, \forall i,j.$
+
+Alternative Hypothesis $H_1:$ not all $(\alpha\beta)_{ij}$ are zero.
+
+```{r echo=FALSE}
+model_inter = aov(median_class ~ star1 + schoolid1 + star1*schoolid1, data = classdata)
+anova(model_inter, model1)
+```
+
+Result: From the ANOVA table, the $F^* = 1.1165$ and $p-value = 0.2734$ is far below the significant level $0.05$. Then we do not reject the null hypothesis and suggest that the interaction effect is not significant. 
+
+Therefore, we choose the additive model in this report. Moreover, it also suggest that the conclusion of class type effect on student performance is consistent in different school. 
+
+```{r echo=FALSE, include=FALSE}
+colors = c( "#74c476", "#41b6c4","#9e9ac8", "#2c7fb8", "#253494", "#081d58")
+
+# Interaction Plot
+par(mfrow=c(1,1))
+interaction.plot(classdata$star1, classdata$schoolurban1, classdata$median_class, 
+  main = "Interaction Plot", 
+  xlab = "School Urbanicity Level", ylab = "Median Math Scores of Classes",
+  legend = TRUE,
+  type = "b", pch = 16, lty = 1,
+  col = colors)
+
+
+# Interaction Plot
+par(mfrow=c(1,1))
+interaction.plot(classdata$schoolid1, classdata$star1, classdata$median_class, 
+  main = "Interaction Plot", 
+  xlab = "School Urbanicity Level", ylab = "Median Math Scores of Classes",
+  legend = TRUE,
+  type = "b", pch = 16, lty = 1,
+  col = colors)
+```
+
+
+## Result of the ANOVA Model
+
+We use R to fit the inbalanced additive model and show the results in this part.
+
+### Estimation of Coefficients
+
+**Main effects**
+
+We can obtain the main effects table and figures of  class types as below. 
+
+```{r,echo=F, results=T, message=F, warning=F}
+eff = model.tables(model1, type = "effects")
+eff$tables$star1
+
+options(repr.plot.width=12, repr.plot.height=12)
+par(mfrow=c(1,1))
+# Main effect plot
+plotmeans(median_class ~ star1, data = classdata,
+          main = "Main Effect Plot: Class Type",
+          xlab = "Class Type",ylab = "Median math score",
+          cex.axis = .8) 
+```
+
+The small class effect is $\alpha_1 = 7.911667$, which means that the median score of small class is 7.911667 higher than the overall average after controlling the effect of school. Similarly, the median score of regular and regular-with-aide classes have lower scores. Therefore, small classes have positive effect on student achievement, while other class types do not. At the same time, the effect of regular and regular-with-aide class are close to each other, which is consistent with the findings in descriptive analysis.
+
+For the school effect, we sort the value and only present the top 5 schools with highest effect and lowest effects respectively. 
+
+Top 5 Schools with highest effect: 
+
+```{r,echo=F, results=T, message=F, warning=F}
+eff_school = sort(eff$tables$schoolid1, decreasing = TRUE)
+head(eff_school,5)
+```
+
+Top 5 Schools with lowest effect: 
+
+```{r,echo=F, results=T, message=F, warning=F}
+tail(eff_school,5)
+```
+
+And the main effect plot below showed us a large differences in school effect on student performance. 
+
+```{r,echo=F, results=T, message=F, warning=F}
+par(mfrow=c(1,1))
+plotmeans(median_class ~ schoolid1, data = classdata,
+          main = "Main Effect Plot: School Urbanicity Level",
+          xlab = "School ID",ylab = "Median math score",
+          cex.axis = .8) 
+```
+
+It is observed that the school effects of some schools are much larger than the effect of class type, which may required further exploration and more characteristics of school. 
+
+**ANOVA table**
+
+We can have the ANOVA table as below and use the data in the table to do further hypothesis test.
+
+```{r echo=FALSE}
+Anova(model1, type = "II")
+SSTO = 12667+137552+76043
+SSA = 12667
+SSB = 137552
+SSE = 76043
+```
+
+From the sum of squares in the table, we can also find that the class type effects only explain a small part of the total variance. There may exist more relavent patterns in the residual since the the sum of residual squares is large. 
+
+### Hypothesis Test
+
+In this part, we use hypothesis test to show the differences of outcomes across groups. We assume that the significant level $0.05$. 
+
+```{r echo=FALSE,include=FALSE}
+Anova(model1, type = "II")
+```
+
+**Class Type**
+
+Null Hypothesis $H_0:\alpha_{1} =\alpha_{2} =\alpha_{3} =0$
+
+Alternative Hypothesis $H_1:$ not all $\alpha_i$ are zero.
+
+Result: From the ANOVA table, the $F^* = 20.9046$ and $p-value = 4.006\times 10^{-9}$ is far below the significant level $0.05$. Then we reject the null hypothesis and suggest that there exist significant differences in median math score between different class types. 
+
+Therefore, we believed that class size do influence the student standard test score significantly. 
+
+**School IDs**
+
+Null Hypothesis $H_0:\beta_{1} =\beta_{2} =\cdots =\beta_{j} =\cdots =0$
+
+Alternative Hypothesis $H_1:$ not all $\beta_j$ are zero.
+
+Result: From the ANOVA table, the $F^* = 6.3947$ and $p-value < 2.2\times 10^{-16}$ is far below the significant level $0.05$. Then we reject the null hypothesis and suggest that there exist significant differences in median math score between different schools. 
+
+## Analysis of Class Type Effect 
+
+To explore which class type associated with the highest math score, we use a Tukey's Range Test. 
+
+### Tukey's Range Test
+
+This pairwise comparision allow us to identify the differences bewteen two groups. 
+
+```{r echo=FALSE}
+# Tukey Test
+tukey <- TukeyHSD(model1, conf.level = 0.95)
+tukey_class = tukey$star1
+tukey_school = tukey$schoolid1
+tukey_class
+round(tukey$star1, 6)
+
+plot(tukey, las = 1, col = "blue")
+```
+
+From the table, We can obtained the adjusted p-value of each test similar to the hypothesis test above. 
+
+Since the p-value of small v.s. regular and small v.s. regular+aide are far below significant level respectively, we suggest that there are differences between small class type and other two regular class type. 
+
+But the p-value of regular v.s. regular+aide is 0.9163, which is much higher than 0.05, we suggest that there is no significant differences between regular class type and regular-with-aide class type.
+
+Therefore, the small class type is associated with the highest student performance. 
+
+
+# Sensitivity analysis 
+
+In this section, we do sensitivity analysis to check the model assumptions and the robustness. 
+
+## Model Diagnostics 
+
+### Residual Distribution
+
+To examine consistency of the fitted model and model assumptions, we generate the residual plots below.  
+
+```{r echo=FALSE}
+# Sensitivity analysis
+
+# Diagnostics
+par(mfrow = c(1, 2))
+plot(model1, which = 1)
+plot(model1, which = 2)
+
+par(mfrow = c(1, 2))
+plot(model1, which = 3)
+plot(model1, which = 5)
+```
+
+From the plots, there is no obvious pattern in the Residual. v.s. Fitted values plot, and the residual distribution approximates to normal distribution in the QQ-plot, which is consistency with our assumptions. However, it is observed in the QQ-plot that some deviations on the upper side exist, which means the distribution is a little bit heavy-tailed. Due to the large sample size of experiment and the mild deviation, we suggest that the model is still robust. 
+
+### Equal Variance
+
+To test for homogeneity of variance, we use Levene's Test as below. 
+
+Null Hypothesis $H_0:\sigma_{ij} = \sigma_{i'j'},\ \forall i\neq i', j\neq j'$, which means the variance of residuals are all equal. 
+
+Alternative Hypothesis $H_1:$ not all $\sigma_{ij}$ are equal. 
+
+```{r, echo=FALSE}
+leveneTest(median_class ~ star1, data = classdata)
+leveneTest(median_class ~ schoolid1, data = classdata)
+```
+
+Since the p-value is far over significant level 0.05 in both test, we do not reject the null hypothesis and suggest the variances are all equal.
+
+```{r, echo=FALSE, include=FALSE}
+shapiro.test(residuals(model1))
+kruskal.test(median_class ~ star1, data = classdata)
+```
+
+<!-- In Shapiro-Wilk's Test, since the p-value is over significant level 0.05, we do not reject the null hypothesis and suggest the distribution of residual is  normal distribution. -->
+
+# Discussion 
+
+In conclusion, the student-teacher ratio impacts the student academic performance significantly. Firstly, smaller class size can help with improvement of student test score. The reason may be that teachers in small class size have more attention on each students and have higher quality of education. For instance, teachers can noticed the students questions or requirements more instantly in small class. Secondly, there is no significant differences in the effect of the regular class and regular-with-aide class, which suggests that the full-time aide teacher have some positive but little contribution to student performance. Therefore, it may be more economic efficient for schools to improve teacher-student ratio instead of assigning aides to each classes. 
+
+However, there are a few directions to improve the model. This analysis is a class level analysis which do not includes the factors related to individuals such as student family background, present and absent rate. Since the sum of class type factor squares takes a small proportion in the total sum of squares, the model may work better if it include some other factors. 
+
+# Acknowledgement {-}
+The report was written by myself. I have referred to the course notes and R codes provided on Canvas by professor and TA and some articles in the reference section. I have discussed the report with the instructor during the consulting session and have better understanding on the sampling randomization. 
+
+# Reference {-}
+
+Word, E., Johnston, J., Bain, H. P., Fulton, B. D., Zaharias, J. B., Achilles, C. M., ... & Breda, C. (1990). The State of Tennessee’s student/teacher achievement ratio (STAR) Project. Tennessee Board of Education.
+
+Krueger, A. B., & Whitmore, D. M. (2001). The effect of attending a small class in the early grades on college‐test taking and middle school test results: Evidence from Project STAR. The Economic Journal, 111(468), 1-28.
+
+Finn, J. D., & Achilles, C. M. (1999). Tennessee's class size study: Findings, implications, misconceptions. Educational evaluation and policy analysis, 21(2), 97-109.
+
+Hanushek, E. A. (1999). Some findings from an independent investigation of the Tennessee STAR experiment and from other investigations of class size effects. Educational Evaluation and Policy Analysis, 21(2), 143-163.
+
+# Session info {-}
+
+```{r warning=FALSE, message=FALSE, results='hide'}
+sessionInfo()
+```
